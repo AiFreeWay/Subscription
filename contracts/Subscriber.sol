@@ -1,18 +1,32 @@
 pragma solidity ^0.6.3;
 
-import "./SubscriberInterface.sol";
-import "./SubscriptionInterface.sol";
+import "./Subscription.sol";
 
 
-contract Subscriber is SubscriberInterface {
+contract Subscriber {
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Need owner permission");
         _;
     }
 
+    modifier requireAmount(uint256 amount) {
+        require(msg.value >= amount, "Not enought amount");
+        _;
+    }
+
+    modifier isSubSell(address subAddr, uint16 id) {
+        require(subsForSell[subAddr][id].isSell, "Subscription not sell");
+        _;
+    }
+
+    struct SellingSub {
+        uint256 price;
+        bool isSell;
+    }
+
     event NewSubscription(
-        address indexed subscriptionContract,
+        address indexed subscriptionContractAddress,
         uint16 indexed id
     );
 
@@ -20,37 +34,28 @@ contract Subscriber is SubscriberInterface {
         uint256 sellTime
     );
 
-    enum SubscriptionState {
-        NotBuy,
-        WaitForConfirmation,
-        Buyed
-    }
-
-    struct SubscriptionForSell {
-        uint256 price;
-        bool isSell;
-    }
-
-
     address private owner;
-    mapping(address => mapping(uint16 => SubscriptionState)) private subscriptions;
-    uint16 private subscriptionsCount;
-    mapping(address => mapping(uint16 => SubscriptionForSell)) private subscriptionsForSell;
-    uint16 private subscriptionsForSellCount;
-    uint256 private accountSellPrice;
+    uint16 private subsCount;
+    uint16 private sellingSubsCount;
     bool private isAccountSell;
+    uint256 private accountSellPrice;
+    mapping(address => mapping(uint16 => bool)) private subscriptions;
+    mapping(address => mapping(uint16 => SellingSub)) private subsForSell;
+
 
     constructor() public {
         owner = msg.sender;
-        subscriptionsCount = 0;
+        subsCount = 0;
         accountSellPrice = 0;
         isAccountSell = false;
     }
 
-    function buySubscription(address subscriptionContract, uint16 id, uint256 amount) onlyOwner payable external {
-        require(subscriptions[subscriptionContract][id] != SubscriptionState.Buyed, "Already buyed");
-        subscriptions[subscriptionContract][id] = SubscriptionState.WaitForConfirmation;
-        SubscriptionInterface(subscriptionContract).buy.value(amount)(id);
+    function buySubscription(address subAddr, uint16 id, uint256 amount) onlyOwner payable external {
+        require(!subscriptions[subAddr][id], "Already buyed");
+        Subscription(subAddr).subscribe.value(amount)(id);
+        subscriptions[msg.sender][id] = true;
+        subsCount += 1;
+        emit NewSubscription(msg.sender, id);
     }
 
     function sellAccount(uint256 price) external onlyOwner {
@@ -58,9 +63,8 @@ contract Subscriber is SubscriberInterface {
         isAccountSell = true;
     }
 
-    function buyAccount() external payable {
+    function buyAccount() external payable requireAmount(accountSellPrice) {
         require(isAccountSell, "Account not sell");
-        require(msg.value >= accountSellPrice, "Not enought amount");
         address(uint160(owner)).transfer(accountSellPrice);
         owner = msg.sender;
         emit newAccountOwner(now);
@@ -71,19 +75,44 @@ contract Subscriber is SubscriberInterface {
         isAccountSell = false;
     }
 
-    function confirmSubscription(uint16 id) external override {
-        require(subscriptions[msg.sender][id] == SubscriptionState.WaitForConfirmation, "Not wait for buy");
-        subscriptions[msg.sender][id] = SubscriptionState.Buyed;
-        subscriptionsCount += 1;
-        emit NewSubscription(msg.sender, id);
+    function sellSubscription(address subAddr, uint16 id, uint256 price) external onlyOwner{
+        subsForSell[subAddr][id] = SellingSub(price, true);
+        sellingSubsCount += 1;
     }
+
+    function abortSellSubscription(address subAddr, uint16 id)
+    external onlyOwner isSubSell(subAddr, id) {
+
+        delete subsForSell[subAddr][id];
+        sellingSubsCount -= 1;
+    }
+
+    function buySubscriptionFromMe(address subAddr, uint16 id)
+    external payable requireAmount(subsForSell[subAddr][id].price) isSubSell(subAddr, id) {
+
+        delete subsForSell[subAddr][id];
+        delete subscriptions[subAddr][id];
+        sellingSubsCount -= 1;
+        subsCount -= 1;
+    }
+
+    function buySubscriptionFromContract(address selllerContract,
+      address subAddr,
+      uint16 id,
+      uint256 amount) external payable onlyOwner {
+
+        Subscriber(selllerContract).buySubscriptionFromMe.value(amount)(subAddr, id);
+        subscriptions[subAddr][id] = true;
+        subsCount += 1;
+    }
+    
 
     function getSubscriptionsCount() external view returns(uint16)  {
-        return subscriptionsCount;
+        return subsCount;
     }
 
-    function getSubscriptionState(address subscriptionContract, uint16 id) external view returns(Subscriber.SubscriptionState)  {
-        return subscriptions[subscriptionContract][id];
+    function isSubscriptionBuy(address subAddr, uint16 id) external view returns(bool)  {
+        return subscriptions[subAddr][id];
     }
 
     function getAccountSellPrice() external view returns(uint256)  {
@@ -94,42 +123,13 @@ contract Subscriber is SubscriberInterface {
         return isAccountSell;
     }
 
+    function getSubscriptionForSellPrice(address subAddr, uint16 id)
+    external view isSubSell(subAddr, id) returns(uint256) {
 
-
-    function sellSubscription(address subscriptionContract, uint16 id, uint256 price) external onlyOwner{
-        subscriptionsForSell[subscriptionContract][id] = SubscriptionForSell(price, true);
-        subscriptionsForSellCount += 1;
-    }
-
-    function abortSellSubscription(address subscriptionContract, uint16 id) external onlyOwner {
-        require(subscriptionsForSell[subscriptionContract][id].isSell, "Subscription not sell");
-        delete subscriptionsForSell[subscriptionContract][id];
-        subscriptionsForSellCount -= 1;
-    }
-
-    function buySubscriptionFromMe(address subscriptionContract, uint16 id) external payable {
-        SubscriptionForSell memory subscription = subscriptionsForSell[subscriptionContract][id];
-        require(subscription.isSell, "Subscription not sell");
-        require(msg.value >= subscription.price, "Not enought amount");
-        delete subscriptionsForSell[subscriptionContract][id];
-        delete subscriptions[subscriptionContract][id];
-        subscriptionsForSellCount -= 1;
-        subscriptionsCount -= 1;
-    }
-
-    function buySubscriptionFromContract(address selllerContract, address subscriptionContract, uint16 id, uint256 amount) external payable onlyOwner {
-        Subscriber(selllerContract).buySubscriptionFromMe.value(amount)(subscriptionContract, id);
-        subscriptions[subscriptionContract][id] = SubscriptionState.Buyed;
-        subscriptionsCount += 1;
-    }
-
-    function getSubscriptionForSellPrice(address subscriptionContract, uint16 id) external view returns(uint256)  {
-        SubscriptionForSell memory subscription = subscriptionsForSell[subscriptionContract][id];
-        require(subscription.isSell, "Subscription not sell");
-        return subscription.price;
+        return subsForSell[subAddr][id].price;
     }
 
     function getSubscriptionsForSellCount() external view returns(uint16)  {
-        return subscriptionsForSellCount;
+        return sellingSubsCount;
     }
 }
