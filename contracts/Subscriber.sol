@@ -52,7 +52,7 @@ contract Subscriber {
 
     function buySubscription(address subAddr, uint16 id, uint256 amount) onlyOwner payable external {
         require(!subscriptions[subAddr][id], "Already buyed");
-        Subscription(subAddr).subscribe.value(amount)(id);
+        require(Subscription(subAddr).subscribe.value(amount)(id));
         subscriptions[msg.sender][id] = true;
         subsCount += 1;
         emit NewSubscription(msg.sender, id);
@@ -88,24 +88,26 @@ contract Subscriber {
     }
 
     function buySubscriptionFromMe(address subAddr, uint16 id)
-    external payable requireAmount(subsForSell[subAddr][id].price) isSubSell(subAddr, id) {
+    external payable requireAmount(subsForSell[subAddr][id].price) isSubSell(subAddr, id) returns(bool) {
 
         delete subsForSell[subAddr][id];
         delete subscriptions[subAddr][id];
         sellingSubsCount -= 1;
         subsCount -= 1;
+        return true;
     }
 
     function buySubscriptionFromContract(address selllerContract,
       address subAddr,
       uint16 id,
       uint256 amount) external payable onlyOwner {
-
-        Subscriber(selllerContract).buySubscriptionFromMe.value(amount)(subAddr, id);
+        
+        require(!subscriptions[subAddr][id], "Already buyed");
+        require(Subscriber(selllerContract).buySubscriptionFromMe.value(amount)(subAddr, id));
         subscriptions[subAddr][id] = true;
         subsCount += 1;
     }
-    
+
 
     function getSubscriptionsCount() external view returns(uint16)  {
         return subsCount;

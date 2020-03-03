@@ -46,8 +46,9 @@ contract Subscription {
         owner = msg.sender;
     }
 
-    function subscribe(uint16 id) external payable isSubExists(id) {
+    function subscribe(uint16 id) external payable isSubExists(id) returns(bool) {
         require(msg.value >= subscriptions[id].price, "Not enought amount");
+        return true;
     }
 
     function addSubscription(uint16 id, uint256 price) external onlyOwner returns(uint16) {
@@ -68,7 +69,7 @@ contract Subscription {
         subsCount -= 1;
         emit RemoveSubscription(id);
     }
-    
+
 
     function getSubscriptionsCount() public view returns(uint16) {
         return subsCount;
