@@ -87,7 +87,7 @@ contract Subscriber {
         sellingSubsCount -= 1;
     }
 
-    function buySubscriptionFromMe(address subAddr, uint16 id)
+    function transferForSubscription(address subAddr, uint16 id)
     external payable requireAmount(subsForSell[subAddr][id].price) isSubSell(subAddr, id) returns(bool) {
 
         delete subsForSell[subAddr][id];
@@ -101,9 +101,9 @@ contract Subscriber {
       address subAddr,
       uint16 id,
       uint256 amount) external payable onlyOwner {
-        
+
         require(!subscriptions[subAddr][id], "Already buyed");
-        require(Subscriber(selllerContract).buySubscriptionFromMe.value(amount)(subAddr, id));
+        require(Subscriber(selllerContract).transferForSubscription.value(amount)(subAddr, id));
         subscriptions[subAddr][id] = true;
         subsCount += 1;
     }

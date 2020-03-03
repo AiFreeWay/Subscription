@@ -9,6 +9,7 @@ Subscription contract can:
 
 Subscriber contract can:
 1. Buy subscription
+2. Sell own subscription for other subscriber
 2. Sell its account for other user
 3. Get informatin abount subscriptions
 
