@@ -26,9 +26,17 @@ contract Subscriber is SubscriberInterface {
         Buyed
     }
 
+    struct SubscriptionForSell {
+        uint256 price;
+        bool isSell;
+    }
+
+
     address private owner;
     mapping(address => mapping(uint16 => SubscriptionState)) private subscriptions;
     uint16 private subscriptionsCount;
+    mapping(address => mapping(uint16 => SubscriptionForSell)) private subscriptionsForSell;
+    uint16 private subscriptionsForSellCount;
     uint256 private accountSellPrice;
     bool private isAccountSell;
 
@@ -52,7 +60,7 @@ contract Subscriber is SubscriberInterface {
 
     function buyAccount() external payable {
         require(isAccountSell, "Account not sell");
-        require(msg.value >= accountSellPrice, "Not enought money");
+        require(msg.value >= accountSellPrice, "Not enought amount");
         address(uint160(owner)).transfer(accountSellPrice);
         owner = msg.sender;
         emit newAccountOwner(now);
@@ -65,7 +73,7 @@ contract Subscriber is SubscriberInterface {
 
     function confirmSubscription(uint16 id) external override {
         require(subscriptions[msg.sender][id] == SubscriptionState.WaitForConfirmation, "Not wait for buy");
-        subscriptions[msg.sender][id] != SubscriptionState.Buyed;
+        subscriptions[msg.sender][id] = SubscriptionState.Buyed;
         subscriptionsCount += 1;
         emit NewSubscription(msg.sender, id);
     }
@@ -74,7 +82,7 @@ contract Subscriber is SubscriberInterface {
         return subscriptionsCount;
     }
 
-    function getSubscriptionsState(address subscriptionContract, uint16 id) external view returns(Subscriber.SubscriptionState)  {
+    function getSubscriptionState(address subscriptionContract, uint16 id) external view returns(Subscriber.SubscriptionState)  {
         return subscriptions[subscriptionContract][id];
     }
 
@@ -84,5 +92,44 @@ contract Subscriber is SubscriberInterface {
 
     function getIsAccountSell() external view returns(bool)  {
         return isAccountSell;
+    }
+
+
+
+    function sellSubscription(address subscriptionContract, uint16 id, uint256 price) external onlyOwner{
+        subscriptionsForSell[subscriptionContract][id] = SubscriptionForSell(price, true);
+        subscriptionsForSellCount += 1;
+    }
+
+    function abortSellSubscription(address subscriptionContract, uint16 id) external onlyOwner {
+        require(subscriptionsForSell[subscriptionContract][id].isSell, "Subscription not sell");
+        delete subscriptionsForSell[subscriptionContract][id];
+        subscriptionsForSellCount -= 1;
+    }
+
+    function buySubscriptionFromMe(address subscriptionContract, uint16 id) external payable {
+        SubscriptionForSell memory subscription = subscriptionsForSell[subscriptionContract][id];
+        require(subscription.isSell, "Subscription not sell");
+        require(msg.value >= subscription.price, "Not enought amount");
+        delete subscriptionsForSell[subscriptionContract][id];
+        delete subscriptions[subscriptionContract][id];
+        subscriptionsForSellCount -= 1;
+        subscriptionsCount -= 1;
+    }
+
+    function buySubscriptionFromContract(address selllerContract, address subscriptionContract, uint16 id, uint256 amount) external payable onlyOwner {
+        Subscriber(selllerContract).buySubscriptionFromMe.value(amount)(subscriptionContract, id);
+        subscriptions[subscriptionContract][id] = SubscriptionState.Buyed;
+        subscriptionsCount += 1;
+    }
+
+    function getSubscriptionForSellPrice(address subscriptionContract, uint16 id) external view returns(uint256)  {
+        SubscriptionForSell memory subscription = subscriptionsForSell[subscriptionContract][id];
+        require(subscription.isSell, "Subscription not sell");
+        return subscription.price;
+    }
+
+    function getSubscriptionsForSellCount() external view returns(uint16)  {
+        return subscriptionsForSellCount;
     }
 }

@@ -103,6 +103,60 @@ contract("Subscription && Subscriber", async accounts => {
       .then(count => assert.equal(count, 1));
   });
 
+  it("Sell subscription", async () => {
+    let contractSubscription = await Subscription.deployed();
+    let contractSubscriber = await Subscriber.deployed();
+    let error;
+    await contractSubscriber.sellSubscription(contractSubscription.address, 0, 5000000000000, {from: accounts[1], gasPrice: 1000000000 })
+      .catch(err => { error = err });
+    assert.ok(error.toString().indexOf("Need owner permission") > 0);
+
+    await contractSubscriber.sellSubscription(contractSubscription.address, 0, 5000000000000, {gasPrice: 1000000000 })
+      .then(() => contractSubscriber.getSubscriptionsForSellCount({ gasPrice: 1000000000 }))
+      .then(count => {
+        assert.equal(count, 1);
+        return contractSubscriber.getSubscriptionForSellPrice(contractSubscription.address, 0, { gasPrice: 1000000000 })
+      })
+      .then(price => assert.equal(price, 5000000000000));
+
+    await contractSubscriber.abortSellSubscription(contractSubscription.address, 0, {from: accounts[1], gasPrice: 1000000000 })
+      .catch(err => { error = err });
+    assert.ok(error.toString().indexOf("Need owner permission") > 0);
+
+    await contractSubscriber.abortSellSubscription(contractSubscription.address, 0, {gasPrice: 1000000000 })
+      .then(() => contractSubscriber.getSubscriptionsForSellCount({ gasPrice: 1000000000 }))
+      .then(count => assert.equal(count, 0));
+  });
+
+  it("Sell subscription from other account", async () => {
+    let contractSubscription = await Subscription.deployed();
+    let contractSubscriber = await Subscriber.deployed();
+    let contractSecondSubscriber = await Subscriber.new({from: accounts[1]});
+
+    let error;
+    await contractSecondSubscriber.buySubscriptionFromContract(contractSubscriber.address, contractSubscription.address, 0, 5000000000000, {from: accounts[0], value: 7000000000000, gasPrice: 1000000000 })
+      .catch(err => { error = err });
+    assert.ok(error.toString().indexOf("Need owner permission") > 0);
+
+    await contractSecondSubscriber.buySubscriptionFromContract(contractSubscriber.address, contractSubscription.address, 0, 5000000000000, {from: accounts[1], value: 7000000000000, gasPrice: 1000000000 })
+      .catch(err => { error = err });
+    assert.ok(error.toString().indexOf("Subscription not sell") > 0);
+
+    await contractSubscriber.sellSubscription(contractSubscription.address, 0, 5000000000000, {gasPrice: 1000000000 });
+
+    await contractSecondSubscriber.buySubscriptionFromContract(contractSubscriber.address, contractSubscription.address, 0, 4000000000000, {from: accounts[1], value: 7000000000000, gasPrice: 1000000000 })
+      .catch(err => { error = err });
+    assert.ok(error.toString().indexOf("Not enought amount") > 0);
+
+    await contractSecondSubscriber.buySubscriptionFromContract(contractSubscriber.address, contractSubscription.address, 0, 5000000000000, {from: accounts[1], value: 7000000000000, gasPrice: 1000000000 })
+      .then(() => contractSecondSubscriber.getSubscriptionState(contractSubscription.address, 0, {gasPrice: 1000000000 }))
+      .then(state => {
+        assert.equal(state, 2);
+        return contractSubscriber.getSubscriptionState(contractSubscription.address, 0, {gasPrice: 1000000000 });
+      })
+      .then(state => assert.equal(state, 0));
+  });
+
   it("Sell account", async () => {
     let contractSubscription = await Subscription.deployed();
     let contractSubscriber = await Subscriber.deployed();
@@ -118,6 +172,10 @@ contract("Subscription && Subscriber", async accounts => {
         return contractSubscriber.getAccountSellPrice({ gasPrice: 1000000000 })
       })
       .then(price => assert.equal(price, 10000000000000));
+
+    await contractSubscriber.abortSellAccount({from: accounts[1], gasPrice: 1000000000 })
+      .catch(err => { error = err });
+    assert.ok(error.toString().indexOf("Need owner permission") > 0);
 
     await contractSubscriber.abortSellAccount({gasPrice: 1000000000 })
       .then(() => contractSubscriber.getIsAccountSell({ gasPrice: 1000000000 }))
@@ -136,7 +194,7 @@ contract("Subscription && Subscriber", async accounts => {
 
     await contractSubscriber.buyAccount({from: accounts[1], value: 5000000000000, gasPrice: 1000000000 })
       .catch(err => { error = err });
-    assert.ok(error.toString().indexOf("Not enought money") > 0);
+    assert.ok(error.toString().indexOf("Not enought amount") > 0);
 
     await contractSubscriber.buyAccount({from: accounts[1], value: 15000000000000, gasPrice: 1000000000 })
       .then(() => contractSubscriber.sellAccount(10000000000000, {gasPrice: 1000000000 }))
